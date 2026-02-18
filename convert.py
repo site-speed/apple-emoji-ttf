@@ -89,7 +89,7 @@ def main() -> int:
     descent = abs(font["hhea"].descent)
     font_metrics = FontMetrics(upem=upem, ascent=ascent, descent=descent)
 
-    cbdt_bytes, locations = build_cbdt(glyphs, strike_meta.ppem, font_metrics)
+    cbdt_bytes, locations = build_cbdt(glyphs, strike_meta.ppem, font_metrics, target=args.target)
     cblc_bytes = build_cblc(cbdt_bytes, glyphs, locations, strike_meta.ppem, font_metrics)
 
     is_windows = args.target == "windows"

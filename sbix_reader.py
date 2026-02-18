@@ -100,3 +100,37 @@ def collect_sbix_glyphs(
         strike_ppem = max(strikes.keys()) if ppem is None else ppem
         meta = StrikeMetadata(ppem=strike_ppem, resolution=72)
     return ordered, meta
+
+
+def get_emoji_png(
+    font: TTFont,
+    codepoint: int,
+    ppem: int | None = None,
+) -> tuple[bytes, int] | None:
+    """
+    Return (png_bytes, actual_ppem) for the glyph at the given Unicode codepoint.
+    If ppem is not in the font's sbix strikes, uses the closest available ppem.
+    Returns None if the codepoint has no glyph or no PNG in sbix.
+    """
+    cmap = font.getBestCmap()
+    if not cmap or codepoint not in cmap:
+        return None
+    glyph_name = cmap[codepoint]
+    strikes = get_sbix_strikes(font)
+    if not strikes:
+        return None
+    available = sorted(strikes.keys())
+    if ppem is not None:
+        if ppem in strikes:
+            strike_ppem = ppem
+        else:
+            strike_ppem = min(available, key=lambda p: abs(p - ppem))
+    else:
+        strike_ppem = max(available)
+    strike = strikes[strike_ppem]
+    if glyph_name not in strike.glyphs:
+        return None
+    raw = _resolve_image_data(strike.glyphs[glyph_name], strike.glyphs)
+    if not raw or not raw.startswith(PNG_SIGNATURE):
+        return None
+    return (raw, strike_ppem)

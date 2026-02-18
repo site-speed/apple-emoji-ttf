@@ -25,9 +25,14 @@ def _small_glyph_metrics(
     height: int,
     ppem: int,
     font: FontMetrics,
+    target: str = "linux",
 ) -> bytes:
-    """SmallGlyphMetrics, big-endian. bearingY from height, clamped to int8."""
-    y_bearing = min(_div_round(height * 5, 6), 127)
+    """SmallGlyphMetrics, big-endian. bearingY from height, clamped to int8.
+    Windows uses a higher y_bearing so emojis align correctly (they sit lower otherwise ¯\_(ツ)_/¯)."""
+    if target == "windows":
+        y_bearing = min(height - 1, 127)
+    else:
+        y_bearing = min(_div_round(height * 5, 6), 127)
     advance = width
     return struct.pack(">BBbbB", height, width, 0, y_bearing, advance)
 
@@ -36,8 +41,10 @@ def build_cbdt(
     glyphs: Sequence[tuple[int, str, bytes]],
     ppem: int,
     font_metrics: FontMetrics,
+    target: str = "linux",
 ) -> tuple[bytes, list[tuple[int, int, int]]]:
-    """Build CBDT v3, Format 17. glyphs = (gid, name, png_bytes); returns bytes + (gid, offset, length) for CBLC."""
+    """Build CBDT v3, Format 17. glyphs = (gid, name, png_bytes); returns bytes + (gid, offset, length) for CBLC.
+    target: 'linux' or 'windows' — Windows uses a higher y_bearing for correct vertical alignment."""
     out = bytearray(struct.pack(">HH", 3, 0))
     locations: list[tuple[int, int, int]] = []
 
@@ -48,7 +55,7 @@ def build_cbdt(
             raise ValueError(f"Invalid PNG for glyph id {gid}")
         width, height = size
 
-        metrics = _small_glyph_metrics(width, height, ppem, font_metrics)
+        metrics = _small_glyph_metrics(width, height, ppem, font_metrics, target)
         offset = len(out)
         out += metrics
         out += struct.pack(">I", len(png_data))
