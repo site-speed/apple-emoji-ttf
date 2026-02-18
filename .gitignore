@@ -1,7 +1,16 @@
-__pycache__
-output
+# MacOS
 .DS_Store
+
+# Python
+__pycache__/
+
+# Font build inputs and outputs
+input/
+output/
 
 # Nix build outputs
 result
 result-*
+
+# Debug screenshots from font render test
+tests/results/
