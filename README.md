@@ -1,4 +1,4 @@
-![AppleColorEmojiLinux](https://repository-images.githubusercontent.com/158348890/44a361ad-d9f3-4b7b-8b57-fd3198ec9952)
+![AppleColorEmojiLinux](https://repository-images.githubusercontent.com/158348890/3f2bca4c-f858-47b9-bade-1f87a4a313da)
 
 # apple-emoji-ttf
 
