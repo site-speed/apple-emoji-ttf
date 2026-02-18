@@ -1,0 +1,121 @@
+name: Test font render
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-26
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Build Linux font
+        run: python convert.py --target linux --output output/AppleColorEmoji-Linux.ttf
+
+      - name: Build Windows font
+        run: python convert.py --target windows --output output/AppleColorEmoji-Windows.ttf
+
+      - name: Upload Linux font
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-font
+          path: output/AppleColorEmoji-Linux.ttf
+
+      - name: Upload Windows font
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-font
+          path: output/AppleColorEmoji-Windows.ttf
+
+  test-linux:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download Linux font
+        id: download
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-font
+
+      - name: Place font in output/
+        run: |
+          mkdir -p output
+          cp "${{ steps.download.outputs.download-path }}/AppleColorEmoji-Linux.ttf" output/
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install test dependencies
+        run: pip install -r requirements-test.txt
+
+      - name: Install Playwright Chromium
+        run: playwright install chromium
+
+      - name: Install Playwright system deps
+        run: playwright install-deps chromium
+
+      - name: Run font render tests
+        run: python -m tests.test_font_render
+
+      - name: Upload results (On Failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: font-render-results-linux
+          path: tests/results/
+
+  test-windows:
+    needs: build
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download Windows font
+        id: download
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-font
+
+      - name: Place font in output/
+        run: |
+          New-Item -ItemType Directory -Force -Path output
+          Copy-Item "${{ steps.download.outputs.download-path }}\AppleColorEmoji-Windows.ttf" -Destination output\
+        shell: pwsh
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install test dependencies
+        run: pip install -r requirements-test.txt
+
+      - name: Install Playwright Chromium
+        run: playwright install chromium
+
+      - name: Run font render tests
+        run: python -m tests.test_font_render
+
+      - name: Upload results (On Failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: font-render-results-windows
+          path: tests/results/
