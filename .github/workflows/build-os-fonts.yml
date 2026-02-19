@@ -87,6 +87,29 @@ jobs:
             'apt-get update -qq && apt-get install -y -qq dpkg-dev debhelper && dpkg-buildpackage -b -uc -us'
           cp fonts-apple-color-emoji_*_all.deb fonts-apple-color-emoji.deb
 
+      - name: Build Fedora RPM package
+        id: rpm
+        env:
+          RPM_VERSION: "2.0.0"
+          RPM_RELEASE: "0.${{ steps.date.outputs.date }}.${{ steps.sha.outputs.short_sha }}"
+        run: |
+          mkdir -p rpm-build/out
+          cp AppleColorEmoji-Linux.ttf rpm-build/AppleColorEmoji.ttf
+          cp distro/fedora/50-apple-color-emoji.conf distro/fedora/fonts-apple-color-emoji.spec rpm-build/
+          sed -i "s/^Version:.*/Version: ${RPM_VERSION}/" rpm-build/fonts-apple-color-emoji.spec
+          sed -i "s/^Release:.*/Release: ${RPM_RELEASE}%{?dist}/" rpm-build/fonts-apple-color-emoji.spec
+          docker run --rm -v "$PWD/rpm-build:/work" -w /work fedora:latest bash -c \
+            'dnf install -y -q rpm-build fontconfig && \
+             rpmbuild -ba \
+               --define "_sourcedir /work" \
+               --define "_specdir /work" \
+               --define "_builddir /work/build" \
+               --define "_buildroot /work/buildroot" \
+               --define "_rpmdir /work/out" \
+               --define "_srcrpmdir /work/out" \
+               /work/fonts-apple-color-emoji.spec'
+          cp rpm-build/out/noarch/fonts-apple-color-emoji-*.noarch.rpm fonts-apple-color-emoji.rpm
+
       - name: Build AUR package
         id: aur
         env:
@@ -115,6 +138,7 @@ jobs:
             AppleColorEmoji-Linux.ttf
             AppleColorEmoji-Windows.ttf
             fonts-apple-color-emoji.deb
+            fonts-apple-color-emoji.rpm
             ttf-apple-emoji.pkg.tar.zst
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -26,6 +26,16 @@ sudo dpkg -i fonts-apple-color-emoji.deb
 sudo apt install ./fonts-apple-color-emoji.deb
 ```
 
+### Fedora / RHEL
+
+Download the `.rpm` from [Releases](https://github.com/samuelngs/apple-emoji-ttf/releases) and install it:
+
+```bash
+sudo dnf install ./fonts-apple-color-emoji.rpm
+# or
+sudo rpm -i fonts-apple-color-emoji.rpm
+```
+
 ### Arch Linux
 
 Download the `.pkg.tar.zst` from [Releases](https://github.com/samuelngs/apple-emoji-ttf/releases) and install it:
