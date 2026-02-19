@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 from cbdt_cblc_builder import FontMetrics, build_cbdt, build_cblc
-from cmap_utils import ensure_unicode_cmap
+from cmap_utils import add_cmap_platform_3_encoding_10, ensure_unicode_cmap
 from sbix_reader import load_font, collect_sbix_glyphs
 from skeleton_font import build_skeleton
 from windows_compat import apply_windows_compat
@@ -82,6 +82,9 @@ def main() -> int:
         LOG.error("No glyphs with PNG data found")
         return 1
 
+    # Spec: CBDT image data for index format 1 must be stored in glyph ID order.
+    glyphs = sorted(glyphs, key=lambda g: g[0])
+
     LOG.info("Using strike ppem=%d, %d glyphs", strike_meta.ppem, len(glyphs))
 
     upem = font["head"].unitsPerEm
@@ -93,16 +96,23 @@ def main() -> int:
     cblc_bytes = build_cblc(cbdt_bytes, glyphs, locations, strike_meta.ppem, font_metrics)
 
     is_windows = args.target == "windows"
+    # Linux: CBDT-only, strip extra tables.
+    # Windows: keep outlines for Segoe UI Emoji compatibility.
     build_skeleton(
         font,
         cbdt_bytes,
         cblc_bytes,
         keep_outlines=is_windows,
         add_bitmap_tables=True,
+        linux_strip=not is_windows,
     )
     ensure_unicode_cmap(font)
+    if not is_windows:
+        add_cmap_platform_3_encoding_10(font)
     if is_windows:
         apply_windows_compat(font)
+
+    # Keep our raw CBLC/CBDT (multi-subtable layout for Linux); no fonttools round-trip.
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     font.save(args.output)

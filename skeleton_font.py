@@ -16,17 +16,22 @@ TABLES_TO_DROP = [
     "sbix",
 ]
 
+# Tables to drop for Linux.
+LINUX_EXTRA_DROP = ["DSIG", "GDEF", "GPOS", "bgcl", "feat", "meta", "morx", "trak"]
+
 
 def drop_tables(
     font: TTFont,
     extra: list[str] | None = None,
     *,
     keep_outlines: bool = True,
+    linux_strip: bool = False,
 ) -> None:
-    """Drop CFF, sbix, etc. If keep_outlines is False, drop glyf/loca too (Linux)."""
     tags = list(TABLES_TO_DROP)
     if not keep_outlines:
         tags = tags + ["glyf", "loca"]
+    if linux_strip:
+        tags = tags + LINUX_EXTRA_DROP
     if extra:
         tags = tags + extra
     for tag in tags:
@@ -49,9 +54,10 @@ def build_skeleton(
     drop_vertical: bool = False,
     keep_outlines: bool = True,
     add_bitmap_tables: bool = True,
+    linux_strip: bool = False,
 ) -> None:
     """Drop tables, optionally strip vertical, then add CBDT/CBLC if requested."""
-    drop_tables(font, keep_outlines=keep_outlines)
+    drop_tables(font, keep_outlines=keep_outlines, linux_strip=linux_strip)
     if drop_vertical:
         for tag in ("vhea", "vmtx"):
             if tag in font:
