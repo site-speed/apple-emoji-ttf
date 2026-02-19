@@ -27,7 +27,7 @@ def _small_glyph_metrics(
     font: FontMetrics,
     target: str = "linux",
 ) -> bytes:
-    """SmallGlyphMetrics, big-endian. bearingY from height, clamped to int8.
+    r"""SmallGlyphMetrics, big-endian. bearingY from height, clamped to int8.
     Windows uses a higher y_bearing so emojis align correctly (they sit lower otherwise ¯\_(ツ)_/¯)."""
     if target == "windows":
         y_bearing = min(height - 1, 127)
@@ -70,12 +70,42 @@ def _sbit_line_metrics(
     font_metrics: FontMetrics,
     width_max: int,
 ) -> bytes:
-    """SbitLineMetrics, big-endian."""
+    """SbitLineMetrics (12 bytes), big-endian. Spec: ascender, descender, widthMax, caretSlope*, caretOffset, minOriginSB, minAdvanceSB, maxBeforeBL, minAfterBL, pad1, pad2."""
     line_height = _div_round((font_metrics.ascent + font_metrics.descent) * ppem, font_metrics.upem)
     ascender = min(_div_round(font_metrics.ascent * ppem, font_metrics.upem), 127)
     descender = -(line_height - ascender)
     descender = max(-128, min(127, descender))
-    return struct.pack(">bbBbbbbbbbbb", ascender, descender, width_max, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+    # SbitLineMetrics: 12 bytes (ascender, descender, widthMax, 9×pad)
+    return struct.pack(">bbB", ascender, descender, width_max) + struct.pack(">9b", 0, 0, 0, 0, 0, 0, 0, 0, 0)
+
+
+# Target glyphs per index subtable (uses multiple subtables; some stacks expect this).
+INDEX_SUBTABLE_GLYPH_CHUNK = 256
+
+
+def _runs_from_locations(
+    locations: list[tuple[int, int, int]],
+) -> list[list[tuple[int, int, int]]]:
+    """Split locations into runs: contiguous GID runs, then chunk large runs so we get multiple index subtables."""
+    if not locations:
+        return []
+    sorted_locs = sorted(locations, key=lambda x: x[0])
+    # First split at GID gaps
+    contiguous: list[list[tuple[int, int, int]]] = []
+    run: list[tuple[int, int, int]] = [sorted_locs[0]]
+    for gid, offset, length in sorted_locs[1:]:
+        if gid == run[-1][0] + 1:
+            run.append((gid, offset, length))
+        else:
+            contiguous.append(run)
+            run = [(gid, offset, length)]
+    contiguous.append(run)
+    # Then chunk any run larger than INDEX_SUBTABLE_GLYPH_CHUNK so we emit multiple subtables
+    runs: list[list[tuple[int, int, int]]] = []
+    for run in contiguous:
+        for i in range(0, len(run), INDEX_SUBTABLE_GLYPH_CHUNK):
+            runs.append(run[i : i + INDEX_SUBTABLE_GLYPH_CHUNK])
+    return runs
 
 
 def build_cblc(
@@ -85,7 +115,7 @@ def build_cblc(
     ppem: int,
     font_metrics: FontMetrics,
 ) -> bytes:
-    """Build CBLC v3, one strike, index format 1. locations from build_cbdt."""
+    """Build CBLC v3, one strike, index format 1. Multiple index subtables per contiguous GID run."""
     if not glyphs or not locations:
         raise ValueError("No glyphs for CBLC")
 
@@ -95,51 +125,59 @@ def build_cblc(
         if size:
             width_max = max(width_max, size[0])
 
+    runs = _runs_from_locations(locations)
     first_gid = min(loc[0] for loc in locations)
     last_gid = max(loc[0] for loc in locations)
-    gid_to_offset = {gid: offset for gid, offset, _ in locations}
-    base_offset = min(o for _, o, _ in locations)
-    end_offset = locations[-1][1] + locations[-1][2]
-
-    # index format 1: one offset per gid; missing glyphs point to next so size=0
-    offsets_rel = []
-    for i in range(last_gid - first_gid + 1):
-        gid = first_gid + i
-        start = gid_to_offset.get(gid)
-        if start is None:
-            for k in range(i + 1, last_gid - first_gid + 1):
-                gid2 = first_gid + k
-                if gid2 in gid_to_offset:
-                    start = gid_to_offset[gid2]
-                    break
-            if start is None:
-                start = end_offset
-        offsets_rel.append(start - base_offset)
-    offsets_rel.append(end_offset - base_offset)
-
-    image_data_offset = base_offset
-    index_subtable_data = struct.pack(">HHL", 1, 17, image_data_offset)
-    for o in offsets_rel:
-        index_subtable_data += struct.pack(">I", o)
-
-    number_of_index_subtables = 1
-    record_size = 8
-    subtable_offset_in_list = number_of_index_subtables * record_size
-    index_subtable_list = bytearray()
-    index_subtable_list += struct.pack(">HHL", first_gid, last_gid, subtable_offset_in_list)
-    index_subtable_list += index_subtable_data
-
-    index_tables_size = len(index_subtable_list)
     color_ref = 0
     hori = _sbit_line_metrics(ppem, font_metrics, width_max)
     vert = hori
 
+    # Build one IndexSubTableFormat1 per run; then the IndexSubtableList (array + subtables).
+    record_size = 8
+    index_subtable_list = bytearray()
+    subtable_chunks: list[bytes] = []
+
+    for run in runs:
+        run_first = run[0][0]
+        run_last = run[-1][0]
+        base_offset = run[0][1]
+        run_end = run[-1][1] + run[-1][2]
+        # Offsets relative to base_offset: one per GID in range + sentinel
+        offsets_rel = [run[i][1] - base_offset for i in range(len(run))]
+        offsets_rel.append(run_end - base_offset)
+
+        subtable_data = bytearray()
+        subtable_data += struct.pack(">HHL", 1, 17, base_offset)
+        for o in offsets_rel:
+            subtable_data += struct.pack(">I", o)
+        subtable_chunks.append(bytes(subtable_data))
+
+    # IndexSubtableList: array of (firstGlyphIndex, lastGlyphIndex, indexSubtableOffset)
+    # offset is from start of IndexSubtableList
+    array_size = len(runs) * record_size
+    offset_into_list = array_size
+    for i, run in enumerate(runs):
+        index_subtable_list += struct.pack(
+            ">HHL", run[0][0], run[-1][0], offset_into_list
+        )
+        offset_into_list += len(subtable_chunks[i])
+    for chunk in subtable_chunks:
+        index_subtable_list += chunk
+
+    number_of_index_subtables = len(runs)
+    index_tables_size = len(index_subtable_list)
     header_size = 8
     bitmap_size_record_size = 48
     index_subtable_list_offset = header_size + bitmap_size_record_size
 
     bitmap_size = bytearray()
-    bitmap_size += struct.pack(">IIII", index_subtable_list_offset, index_tables_size, number_of_index_subtables, color_ref)
+    bitmap_size += struct.pack(
+        ">IIII",
+        index_subtable_list_offset,
+        index_tables_size,
+        number_of_index_subtables,
+        color_ref,
+    )
     bitmap_size += hori
     bitmap_size += vert
     bitmap_size += struct.pack(">HHBBBb", first_gid, last_gid, ppem, ppem, 32, 1)
