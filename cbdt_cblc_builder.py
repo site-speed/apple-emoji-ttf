@@ -43,8 +43,7 @@ def build_cbdt(
     font_metrics: FontMetrics,
     target: str = "linux",
 ) -> tuple[bytes, list[tuple[int, int, int]]]:
-    """Build CBDT v3, Format 17. glyphs = (gid, name, png_bytes); returns bytes + (gid, offset, length) for CBLC.
-    target: 'linux' or 'windows' — Windows uses a higher y_bearing for correct vertical alignment."""
+    """Build CBDT v3, Format 17. glyphs = (gid, name, png_bytes); returns bytes + (gid, offset, length) for CBLC."""
     out = bytearray(struct.pack(">HH", 3, 0))
     locations: list[tuple[int, int, int]] = []
 
