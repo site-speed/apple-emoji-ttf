@@ -1,5 +1,5 @@
 { pkgs
-, src ? ./
+, src ? ./.
 , ttc
 }:
 
