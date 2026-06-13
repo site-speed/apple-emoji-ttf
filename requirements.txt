@@ -1,1 +1,6 @@
 fonttools>=4.0.0
+PyYAML>=6.0
+# For -c configs/web.yaml (PNG compression)
+pillow>=10.0.0
+# For sequence GSUB generation and verification
+uharfbuzz>=0.40.0
