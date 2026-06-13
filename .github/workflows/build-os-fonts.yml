@@ -79,19 +79,6 @@ jobs:
           from="${{ steps.download.outputs.download-path }}"
           find "$from" -name '*.ttf' -exec cp {} . \;
 
-      - name: Create prerelease with font assets
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release create "${{ steps.release.outputs.tag }}" \
-            AppleColorEmoji-Linux.ttf \
-            AppleColorEmoji-Windows.ttf \
-            --target "$GITHUB_SHA" \
-            --title "${{ steps.release.outputs.name }}" \
-            --generate-notes \
-            --prerelease \
-            --latest=false
-
       - name: Prepare package workspaces
         run: |
           mkdir -p deb-build rpm-build aur-build
@@ -100,6 +87,7 @@ jobs:
           cp distro/debian/50-apple-color-emoji.conf deb-build/
           cp AppleColorEmoji-Linux.ttf rpm-build/AppleColorEmoji.ttf
           cp distro/fedora/50-apple-color-emoji.conf rpm-build/
+          cp AppleColorEmoji-Linux.ttf aur-build/
           cp distro/aur/75-apple-color-emoji.conf aur-build/
           python tools/render_package_templates.py \
             --release-tag "${{ steps.release.outputs.tag }}" \
@@ -140,13 +128,17 @@ jobs:
             'pacman -Syu --noconfirm base-devel && useradd -m builder && chown -R builder:builder /build/aur-build && su builder -c "cd /build/aur-build && makepkg -sf --noconfirm"'
           cp aur-build/ttf-apple-emoji-*.pkg.tar.zst ttf-apple-emoji.pkg.tar.zst
 
-      - name: Upload packages and publish release
+      - name: Create release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release upload "${{ steps.release.outputs.tag }}" \
+          gh release create "${{ steps.release.outputs.tag }}" \
+            AppleColorEmoji-Linux.ttf \
+            AppleColorEmoji-Windows.ttf \
             fonts-apple-color-emoji.deb \
             fonts-apple-color-emoji.rpm \
             ttf-apple-emoji.pkg.tar.zst \
-            --clobber
-          gh release edit "${{ steps.release.outputs.tag }}" --prerelease=false --latest
+            --target "$GITHUB_SHA" \
+            --title "${{ steps.release.outputs.name }}" \
+            --generate-notes \
+            --latest
